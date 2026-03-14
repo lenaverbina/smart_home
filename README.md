@@ -21,7 +21,7 @@ docker-compose up -d
 
 ### Инструкция по установке:
 1. Скачайте JAR-файл с [Maven Central](https://mvnrepository.com/artifact/com.clickhouse.spark/clickhouse-spark-runtime-3.5_2.12/0.10.0)
-2. Поместите скачанный файл в папку `jars/` этого проекта
+2. Создайте папку `jars/` в корне проекта и поместите туда скачанный файл
 
 ## Результат
 - Датчики генерируют данные
