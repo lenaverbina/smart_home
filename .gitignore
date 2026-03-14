@@ -1,6 +1,6 @@
 *.jar
 */jars/
 consumer/data/
-producer/states/
+data_producer/states/
 *.spark_temp
 *.__pycache__
