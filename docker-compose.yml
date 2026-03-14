@@ -1,0 +1,193 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: smart-home-rabbitmq
+    ports:
+      - "5672:5672"      # для приложений
+      - "15672:15672"    # веб-интерфейс
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    #restart: unless-stopped
+    networks:
+      - smart-home-net
+
+  postgres-airflow:
+    image: postgres:13
+    container_name: smart-home-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - smart-home-net
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  airflow-init:
+    build: ./dag
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow/airflow
+    volumes:
+    - ./dag:/opt/airflow/dags
+    - airflow_logs:/opt/airflow/logs
+    command: >
+      bash -c "
+      airflow db init &&
+      airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin
+      "
+    networks:
+    - smart-home-net
+
+  airflow-webserver:
+    build: ./dag
+    container_name: smart-home-airflow-webserver
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+    volumes:
+      - ./dag:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "8082:8080"
+    networks:
+      - smart-home-net
+    command: webserver
+
+  airflow-scheduler:
+    build: ./dag  # потому что Dockerfile лежит в папке dag
+    container_name: smart-home-airflow-scheduler
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    volumes:
+      - ./dag:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - smart-home-net
+    command: scheduler
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.2.3.2
+    container_name: smart-home-clickhouse
+    ports:
+      - "8123:8123"      # HTTP интерфейс
+      - "9000:9000"      # нативный протокол
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: default
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    #restart: unless-stopped
+    networks:
+      - smart-home-net
+  
+  spark-master:
+    image: apache/spark:3.5.0 
+    container_name: smart-home-spark-master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+      - SPARK_MASTER_WEBUI_PORT=8080
+    volumes:
+      - ./spark_processor:/opt/spark_processor
+      - ./consumer/data:/opt/data
+      - ./spark_temp:/tmp/spark-temp
+      - ./jars:/opt/jars
+    networks:
+      - smart-home-net
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+
+  spark-worker:
+    image: apache/spark:3.5.0
+    container_name: smart-home-spark-worker
+    ports:
+      - "8081:8080"
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+    volumes:
+      - ./spark_processor:/opt/spark_processor
+      - ./consumer/data:/opt/data
+      - ./spark_temp:/tmp/spark-temp
+    depends_on:
+      - spark-master
+    networks:
+      - smart-home-net
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+
+  data_producer:
+    build: ./data_producer
+    container_name: smart-home-producer
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+    volumes:
+      - ./data_producer/states:/app/states  # для файлов состояния счетчиков
+    #restart: unless-stopped
+    networks:
+      - smart-home-net
+
+  consumer:
+    build: ./consumer
+    container_name: smart-home-consumer
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+    volumes:
+      - ./consumer/data:/app/data # для сохранения файлов в формате parquet
+    networks:
+      - smart-home-net
+
+networks:
+  smart-home-net:
+    name: smart-home-network
+    driver: bridge
+
+volumes:
+  clickhouse_data:
+    name: smart-home-clickhouse-data
+  postgres_data:      # добавь это
+  airflow_logs:   
