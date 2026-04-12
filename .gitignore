@@ -4,3 +4,5 @@ consumer/data/
 data_producer/states/
 *.spark_temp
 *.__pycache__
+dag/__pycache__/*
+superset_data/

@@ -6,6 +6,7 @@ from datetime import datetime
 with DAG('smart_home_pipeline',
          start_date=datetime(2026,1,1),
          schedule_interval='@hourly',
+         catchup=False,
          max_active_runs=1
          ) as dag:
     

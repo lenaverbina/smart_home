@@ -1,6 +1,7 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import to_timestamp, date_format
 
+from pathlib import Path
 """
 надо подключиться к clickhouse и создать таблицу sensor_readings
 """
@@ -33,3 +34,15 @@ clean_df.write \
 
 print(f"✅ Загружено записей: {clean_df.count()}")
 spark.stop()
+
+
+data_dir = Path("/opt/data")
+
+parquet_files = list(data_dir.glob("*.parquet"))
+
+for file_path in parquet_files:
+    try:
+        file_path.unlink()
+        print(f"Удалён: {file_path.name}")
+    except OSError as e:
+        print(f"Ошибка при удалении {file_path.name}: {e}")

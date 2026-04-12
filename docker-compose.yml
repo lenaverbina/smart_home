@@ -3,13 +3,13 @@ services:
     image: rabbitmq:3-management-alpine
     container_name: smart-home-rabbitmq
     ports:
-      - "5672:5672"      # для приложений
-      - "15672:15672"    # веб-интерфейс
+      - "5672:5672" # для приложений
+      - "15672:15672" # веб-интерфейс
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -29,7 +29,7 @@ services:
     networks:
       - smart-home-net
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
+      test: [ "CMD", "pg_isready", "-U", "airflow" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -43,15 +43,12 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow/airflow
     volumes:
-    - ./dag:/opt/airflow/dags
-    - airflow_logs:/opt/airflow/logs
+      - ./dag:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
     command: >
-      bash -c "
-      airflow db init &&
-      airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin
-      "
+      bash -c " airflow db init && airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin "
     networks:
-    - smart-home-net
+      - smart-home-net
 
   airflow-webserver:
     build: ./dag
@@ -75,7 +72,7 @@ services:
     command: webserver
 
   airflow-scheduler:
-    build: ./dag  # потому что Dockerfile лежит в папке dag
+    build: ./dag # потому что Dockerfile лежит в папке dag
     container_name: smart-home-airflow-scheduler
     depends_on:
       postgres-airflow:
@@ -96,24 +93,46 @@ services:
     image: clickhouse/clickhouse-server:26.2.3.2
     container_name: smart-home-clickhouse
     ports:
-      - "8123:8123"      # HTTP интерфейс
-      - "9000:9000"      # нативный протокол
+      - "8123:8123" # HTTP интерфейс
+      - "9000:9000" # нативный протокол
     environment:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: default
     volumes:
       - clickhouse_data:/var/lib/clickhouse
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:8123/ping" ]
       interval: 30s
       timeout: 5s
       retries: 3
     #restart: unless-stopped
     networks:
       - smart-home-net
-  
+
+  superset:
+    build: ./superset
+    container_name: smart-home-superset
+    depends_on:
+      - clickhouse
+    ports:
+      - "8088:8088"
+    environment:
+      - SUPERSET_SECRET_KEY=AKMMjE3XjTX0sdaVzp8YZamaxEguk6Wrds1wcExOJwoGHy6T54e6pQNa
+      - SUPERSET_CONFIG_PATH=/app/superset_config.py
+    volumes:
+      - ./superset_data:/app/superset_home # мои дашборды
+    networks:
+      - smart-home-net
+    command: >
+      sh -c "
+        superset fab create-admin --username admin --firstname Admin --lastname User --email admin@superset.com --password admin &&
+        superset db upgrade &&
+        superset init &&
+        superset run -p 8088 --host 0.0.0.0
+      "
+
   spark-master:
-    image: apache/spark:3.5.0 
+    image: apache/spark:3.5.0
     container_name: smart-home-spark-master
     ports:
       - "8080:8080"
@@ -162,7 +181,7 @@ services:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
     volumes:
-      - ./data_producer/states:/app/states  # для файлов состояния счетчиков
+      - ./data_producer/states:/app/states # для файлов состояния счетчиков
     #restart: unless-stopped
     networks:
       - smart-home-net
@@ -189,5 +208,5 @@ networks:
 volumes:
   clickhouse_data:
     name: smart-home-clickhouse-data
-  postgres_data:      # добавь это
-  airflow_logs:   
+  postgres_data:
+  airflow_logs:
